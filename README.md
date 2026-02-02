@@ -14,7 +14,7 @@ No auth (yet). The goal is simple visibility: everyone can see what exists and w
 Uses local Postgres:
 
 - user: `postgres`
-- password: `netbox`
+- password: `REDACTED`
 - db: `openclaw_agency`
 
 ## Environment
