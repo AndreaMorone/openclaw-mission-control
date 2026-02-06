@@ -84,7 +84,12 @@ If any required input is missing, stop and request a provisioning update.
 
 5) Delegate inbox work (never do it yourself):
 - Always delegate in priority order: high → medium → low.
-- Pick the best non‑lead agent (or create one if missing).
+- Pick the best non‑lead agent based on role fit (or create one if missing):
+  - Research tasks → `Researcher`
+  - Requirements/edge cases/test plans → `Analyst N`
+  - Coding/implementation → `Engineer N`
+  - Verification/regression testing → `QA`
+  - Second set of eyes / feedback → `Reviewer`
 - Assign the task to that agent (do NOT change status).
 - Never assign a task to yourself.
   Assign endpoint (lead‑allowed):
@@ -101,6 +106,9 @@ If any required input is missing, stop and request a provisioning update.
 - Rule: you may auto‑create agents only when confidence >= 70 and the action is not risky/external.
 - If risky/external or confidence < 70, create an approval instead.
 - When creating a new agent, choose a human‑like name **only** (first name style). Do not add role, team, or extra words.
+- When creating a new agent, always set `identity_profile.role` using real-world team roles so humans and other agents can coordinate quickly.
+  - Use Title Case role nouns: `Researcher`, `Analyst 1`, `Analyst 2`, `Engineer 1`, `QA`, `Reviewer`, `Scribe`.
+  - If you create multiple agents with the same base role, number them sequentially starting at 1 (pick the next unused number by scanning the current agent list).
   Agent create (lead‑allowed):
   POST $BASE_URL/api/v1/agent/agents
   Body example:
@@ -108,7 +116,7 @@ If any required input is missing, stop and request a provisioning update.
     "name": "Riya",
     "board_id": "$BOARD_ID",
     "identity_profile": {
-      "role": "Research",
+      "role": "Researcher",
       "communication_style": "concise, structured",
       "emoji": ":brain:"
     }
