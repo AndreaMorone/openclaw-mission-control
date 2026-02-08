@@ -38,7 +38,7 @@ function BoardChatComposerImpl({
     if (ok) {
       setValue("");
     }
-  }, [isSending, onSend, value]);
+  }, [disabled, isSending, onSend, value]);
 
   return (
     <div className="mt-4 space-y-2">

@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { SignInButton, SignedIn, SignedOut, useAuth } from "@/auth/clerk";
@@ -13,7 +13,7 @@ import { BrandMark } from "@/components/atoms/BrandMark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-export default function InvitePage() {
+function InviteContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isSignedIn } = useAuth();
@@ -144,5 +144,28 @@ export default function InvitePage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function InvitePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-app text-strong">
+          <header className="border-b border-[color:var(--border)] bg-white">
+            <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+              <BrandMark />
+            </div>
+          </header>
+          <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-16">
+            <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-8 shadow-sm">
+              <div className="text-sm text-muted">Loading invite…</div>
+            </div>
+          </main>
+        </div>
+      }
+    >
+      <InviteContent />
+    </Suspense>
   );
 }

@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { SignInButton, SignedIn, SignedOut, useAuth } from "@/auth/clerk";
 import { useQueryClient } from "@tanstack/react-query";
@@ -328,12 +328,11 @@ export default function OrganizationPage() {
 
   const [accessDialogOpen, setAccessDialogOpen] = useState(false);
   const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
-  const [accessScope, setAccessScope] = useState<AccessScope>("all");
-  const [accessAllRead, setAccessAllRead] = useState(false);
-  const [accessAllWrite, setAccessAllWrite] = useState(false);
-  const [accessRole, setAccessRole] = useState("member");
-  const [accessMap, setAccessMap] =
-    useState<BoardAccessState>(defaultBoardAccess);
+  const [accessScope, setAccessScope] = useState<AccessScope | null>(null);
+  const [accessAllRead, setAccessAllRead] = useState<boolean | null>(null);
+  const [accessAllWrite, setAccessAllWrite] = useState<boolean | null>(null);
+  const [accessRole, setAccessRole] = useState<string | null>(null);
+  const [accessMap, setAccessMap] = useState<BoardAccessState | null>(null);
   const [accessError, setAccessError] = useState<string | null>(null);
 
   const orgQuery = useGetMyOrgApiV1OrganizationsMeGet<
@@ -426,6 +425,45 @@ export default function OrganizationPage() {
       },
     });
 
+  const memberDetails =
+    memberDetailsQuery.data?.status === 200
+      ? memberDetailsQuery.data.data
+      : null;
+
+  const defaultAccess = useMemo(() => {
+    if (!memberDetails) {
+      return {
+        role: "member",
+        scope: "all" as AccessScope,
+        allRead: false,
+        allWrite: false,
+        access: {},
+      };
+    }
+    const isAll =
+      memberDetails.all_boards_read || memberDetails.all_boards_write;
+    const nextAccess: BoardAccessState = {};
+    for (const entry of memberDetails.board_access ?? []) {
+      nextAccess[entry.board_id] = {
+        read: entry.can_read || entry.can_write,
+        write: entry.can_write,
+      };
+    }
+    return {
+      role: memberDetails.role,
+      scope: isAll ? "all" : ("custom" as AccessScope),
+      allRead: memberDetails.all_boards_read,
+      allWrite: memberDetails.all_boards_write,
+      access: nextAccess,
+    };
+  }, [memberDetails]);
+
+  const resolvedAccessRole = accessRole ?? defaultAccess.role;
+  const resolvedAccessScope = accessScope ?? defaultAccess.scope;
+  const resolvedAccessAllRead = accessAllRead ?? defaultAccess.allRead;
+  const resolvedAccessAllWrite = accessAllWrite ?? defaultAccess.allWrite;
+  const resolvedAccessMap = accessMap ?? defaultAccess.access;
+
   const createInviteMutation =
     useCreateOrgInviteApiV1OrganizationsMeInvitesPost<ApiError>({
       mutation: {
@@ -505,37 +543,31 @@ export default function OrganizationPage() {
       },
     });
 
-  useEffect(() => {
-    if (memberDetailsQuery.data?.status !== 200) return;
-    const member = memberDetailsQuery.data.data;
-    setAccessRole(member.role);
-    const isAll = member.all_boards_read || member.all_boards_write;
-    setAccessScope(isAll ? "all" : "custom");
-    setAccessAllRead(member.all_boards_read);
-    setAccessAllWrite(member.all_boards_write);
-    const nextAccess: BoardAccessState = {};
-    for (const entry of member.board_access ?? []) {
-      nextAccess[entry.board_id] = {
-        read: entry.can_read || entry.can_write,
-        write: entry.can_write,
-      };
-    }
-    setAccessMap(nextAccess);
+  const resetAccessState = () => {
+    setAccessRole(null);
+    setAccessScope(null);
+    setAccessAllRead(null);
+    setAccessAllWrite(null);
+    setAccessMap(null);
     setAccessError(null);
-  }, [memberDetailsQuery.data]);
+  };
 
-  useEffect(() => {
-    if (!accessDialogOpen) {
+  const handleAccessDialogChange = (open: boolean) => {
+    setAccessDialogOpen(open);
+    if (!open) {
       setActiveMemberId(null);
       setAccessError(null);
+      return;
     }
-  }, [accessDialogOpen]);
+    resetAccessState();
+  };
 
-  useEffect(() => {
-    if (!inviteDialogOpen) {
+  const handleInviteDialogChange = (open: boolean) => {
+    setInviteDialogOpen(open);
+    if (!open) {
       setInviteError(null);
     }
-  }, [inviteDialogOpen]);
+  };
 
   const orgName =
     orgQuery.data?.status === 200 ? orgQuery.data.data.name : "Organization";
@@ -620,15 +652,18 @@ export default function OrganizationPage() {
   const openAccessDialog = (memberId: string) => {
     setActiveMemberId(memberId);
     setAccessDialogOpen(true);
+    resetAccessState();
   };
 
   const handleSaveAccess = async () => {
     if (!activeMemberId || !isAdmin) return;
 
     const hasAllAccess =
-      accessScope === "all" && (accessAllRead || accessAllWrite);
-    const accessList = buildAccessList(accessMap);
-    const hasCustomAccess = accessScope === "custom" && accessList.length > 0;
+      resolvedAccessScope === "all" &&
+      (resolvedAccessAllRead || resolvedAccessAllWrite);
+    const accessList = buildAccessList(resolvedAccessMap);
+    const hasCustomAccess =
+      resolvedAccessScope === "custom" && accessList.length > 0;
 
     if (!hasAllAccess && !hasCustomAccess) {
       setAccessError("Select read or write access for at least one board.");
@@ -638,12 +673,11 @@ export default function OrganizationPage() {
     setAccessError(null);
 
     try {
-      if (memberDetailsQuery.data?.status === 200) {
-        const member = memberDetailsQuery.data.data;
-        if (member.role !== accessRole) {
+      if (memberDetails) {
+        if (memberDetails.role !== resolvedAccessRole) {
           await updateMemberRoleMutation.mutateAsync({
-            memberId: member.id,
-            data: { role: accessRole },
+            memberId: memberDetails.id,
+            data: { role: resolvedAccessRole },
           });
         }
       }
@@ -651,9 +685,11 @@ export default function OrganizationPage() {
       await updateMemberAccessMutation.mutateAsync({
         memberId: activeMemberId,
         data: {
-          all_boards_read: accessScope === "all" ? accessAllRead : false,
-          all_boards_write: accessScope === "all" ? accessAllWrite : false,
-          board_access: accessScope === "custom" ? accessList : [],
+          all_boards_read:
+            resolvedAccessScope === "all" ? resolvedAccessAllRead : false,
+          all_boards_write:
+            resolvedAccessScope === "all" ? resolvedAccessAllWrite : false,
+          board_access: resolvedAccessScope === "custom" ? accessList : [],
         },
       });
 
@@ -953,7 +989,7 @@ export default function OrganizationPage() {
         </main>
       </SignedIn>
 
-      <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
+      <Dialog open={inviteDialogOpen} onOpenChange={handleInviteDialogChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Invite a member</DialogTitle>
@@ -1037,7 +1073,7 @@ export default function OrganizationPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={accessDialogOpen} onOpenChange={setAccessDialogOpen}>
+      <Dialog open={accessDialogOpen} onOpenChange={handleAccessDialogChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Manage member access</DialogTitle>
@@ -1069,7 +1105,10 @@ export default function OrganizationPage() {
                 <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Role
                 </label>
-                <Select value={accessRole} onValueChange={setAccessRole}>
+                <Select
+                  value={resolvedAccessRole}
+                  onValueChange={setAccessRole}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select role" />
                   </SelectTrigger>
@@ -1083,13 +1122,13 @@ export default function OrganizationPage() {
 
               <BoardAccessEditor
                 boards={boards}
-                scope={accessScope}
+                scope={resolvedAccessScope}
                 onScopeChange={setAccessScope}
-                allRead={accessAllRead}
-                allWrite={accessAllWrite}
+                allRead={resolvedAccessAllRead}
+                allWrite={resolvedAccessAllWrite}
                 onAllReadChange={setAccessAllRead}
                 onAllWriteChange={setAccessAllWrite}
-                access={accessMap}
+                access={resolvedAccessMap}
                 onAccessChange={setAccessMap}
                 emptyMessage={
                   boardsQuery.isLoading ? "Loading boards..." : undefined
