@@ -9,10 +9,7 @@ import { SignedIn, SignedOut, useAuth } from "@/auth/clerk";
 
 import { ApiError } from "@/api/mutator";
 import { useCreateGatewayApiV1GatewaysPost } from "@/api/generated/gateways/gateways";
-import {
-  type getMyMembershipApiV1OrganizationsMeMemberGetResponse,
-  useGetMyMembershipApiV1OrganizationsMeMemberGet,
-} from "@/api/generated/organizations/organizations";
+import { useOrganizationMembership } from "@/lib/use-organization-membership";
 import { AdminOnlyNotice } from "@/components/auth/AdminOnlyNotice";
 import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
 import { GatewayForm } from "@/components/gateways/GatewayForm";
@@ -30,19 +27,7 @@ export default function NewGatewayPage() {
   const { isSignedIn } = useAuth();
   const router = useRouter();
 
-  const membershipQuery = useGetMyMembershipApiV1OrganizationsMeMemberGet<
-    getMyMembershipApiV1OrganizationsMeMemberGetResponse,
-    ApiError
-  >({
-    query: {
-      enabled: Boolean(isSignedIn),
-      refetchOnMount: "always",
-      retry: false,
-    },
-  });
-  const member =
-    membershipQuery.data?.status === 200 ? membershipQuery.data.data : null;
-  const isAdmin = member ? ["owner", "admin"].includes(member.role) : false;
+  const { isAdmin } = useOrganizationMembership(isSignedIn);
 
   const [name, setName] = useState("");
   const [gatewayUrl, setGatewayUrl] = useState("");

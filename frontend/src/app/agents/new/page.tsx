@@ -13,10 +13,7 @@ import {
   useListBoardsApiV1BoardsGet,
 } from "@/api/generated/boards/boards";
 import { useCreateAgentApiV1AgentsPost } from "@/api/generated/agents/agents";
-import {
-  type getMyMembershipApiV1OrganizationsMeMemberGetResponse,
-  useGetMyMembershipApiV1OrganizationsMeMemberGet,
-} from "@/api/generated/organizations/organizations";
+import { useOrganizationMembership } from "@/lib/use-organization-membership";
 import type { BoardRead } from "@/api/generated/model";
 import { AdminOnlyNotice } from "@/components/auth/AdminOnlyNotice";
 import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
@@ -86,19 +83,7 @@ export default function NewAgentPage() {
   const router = useRouter();
   const { isSignedIn } = useAuth();
 
-  const membershipQuery = useGetMyMembershipApiV1OrganizationsMeMemberGet<
-    getMyMembershipApiV1OrganizationsMeMemberGetResponse,
-    ApiError
-  >({
-    query: {
-      enabled: Boolean(isSignedIn),
-      refetchOnMount: "always",
-      retry: false,
-    },
-  });
-  const member =
-    membershipQuery.data?.status === 200 ? membershipQuery.data.data : null;
-  const isAdmin = member ? ["owner", "admin"].includes(member.role) : false;
+  const { isAdmin } = useOrganizationMembership(isSignedIn);
 
   const [name, setName] = useState("");
   const [boardId, setBoardId] = useState<string>("");

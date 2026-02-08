@@ -22,10 +22,7 @@ import {
   type listBoardsApiV1BoardsGetResponse,
   useListBoardsApiV1BoardsGet,
 } from "@/api/generated/boards/boards";
-import {
-  type getMyMembershipApiV1OrganizationsMeMemberGetResponse,
-  useGetMyMembershipApiV1OrganizationsMeMemberGet,
-} from "@/api/generated/organizations/organizations";
+import { useOrganizationMembership } from "@/lib/use-organization-membership";
 import type {
   ActivityEventRead,
   AgentRead,
@@ -84,19 +81,7 @@ export default function AgentDetailPage() {
   const agentIdParam = params?.agentId;
   const agentId = Array.isArray(agentIdParam) ? agentIdParam[0] : agentIdParam;
 
-  const membershipQuery = useGetMyMembershipApiV1OrganizationsMeMemberGet<
-    getMyMembershipApiV1OrganizationsMeMemberGetResponse,
-    ApiError
-  >({
-    query: {
-      enabled: Boolean(isSignedIn),
-      refetchOnMount: "always",
-      retry: false,
-    },
-  });
-  const member =
-    membershipQuery.data?.status === 200 ? membershipQuery.data.data : null;
-  const isAdmin = member ? ["owner", "admin"].includes(member.role) : false;
+  const { isAdmin } = useOrganizationMembership(isSignedIn);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);

@@ -18,10 +18,7 @@ import {
   type listAgentsApiV1AgentsGetResponse,
   useListAgentsApiV1AgentsGet,
 } from "@/api/generated/agents/agents";
-import {
-  type getMyMembershipApiV1OrganizationsMeMemberGetResponse,
-  useGetMyMembershipApiV1OrganizationsMeMemberGet,
-} from "@/api/generated/organizations/organizations";
+import { useOrganizationMembership } from "@/lib/use-organization-membership";
 import { AdminOnlyNotice } from "@/components/auth/AdminOnlyNotice";
 import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
@@ -55,19 +52,7 @@ export default function GatewayDetailPage() {
     ? gatewayIdParam[0]
     : gatewayIdParam;
 
-  const membershipQuery = useGetMyMembershipApiV1OrganizationsMeMemberGet<
-    getMyMembershipApiV1OrganizationsMeMemberGetResponse,
-    ApiError
-  >({
-    query: {
-      enabled: Boolean(isSignedIn),
-      refetchOnMount: "always",
-      retry: false,
-    },
-  });
-  const member =
-    membershipQuery.data?.status === 200 ? membershipQuery.data.data : null;
-  const isAdmin = member ? ["owner", "admin"].includes(member.role) : false;
+  const { isAdmin } = useOrganizationMembership(isSignedIn);
 
   const gatewayQuery = useGetGatewayApiV1GatewaysGatewayIdGet<
     getGatewayApiV1GatewaysGatewayIdGetResponse,
