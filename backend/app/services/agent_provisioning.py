@@ -23,7 +23,18 @@ if TYPE_CHECKING:
     from app.models.gateways import Gateway
     from app.models.users import User
 
-DEFAULT_HEARTBEAT_CONFIG = {"every": "10m", "target": "none"}
+DEFAULT_HEARTBEAT_CONFIG: dict[str, Any] = {
+    "every": "10m",
+    "target": "none",
+    # Keep heartbeat delivery concise by default.
+    "includeReasoning": False,
+}
+DEFAULT_CHANNEL_HEARTBEAT_VISIBILITY: dict[str, bool] = {
+    # Suppress routine HEARTBEAT_OK delivery by default.
+    "showOk": False,
+    "showAlerts": True,
+    "useIndicator": True,
+}
 DEFAULT_IDENTITY_PROFILE = {
     "role": "Generalist",
     "communication_style": "direct, concise, practical",
@@ -52,6 +63,7 @@ DEFAULT_GATEWAY_FILES = frozenset(
     {
         "AGENTS.md",
         "SOUL.md",
+        "TASK_SOUL.md",
         "SELF.md",
         "AUTONOMY.md",
         "TOOLS.md",
@@ -71,7 +83,7 @@ DEFAULT_GATEWAY_FILES = frozenset(
 # - SELF.md: evolving identity/preferences
 # - USER.md: human-provided context + lead intake notes
 # - MEMORY.md: curated long-term memory (consolidated)
-PRESERVE_AGENT_EDITABLE_FILES = frozenset({"SELF.md", "USER.md", "MEMORY.md"})
+PRESERVE_AGENT_EDITABLE_FILES = frozenset({"SELF.md", "USER.md", "MEMORY.md", "TASK_SOUL.md"})
 
 HEARTBEAT_LEAD_TEMPLATE = "HEARTBEAT_LEAD.md"
 HEARTBEAT_AGENT_TEMPLATE = "HEARTBEAT_AGENT.md"
@@ -198,9 +210,31 @@ def _agent_key(agent: Agent) -> str:
 
 
 def _heartbeat_config(agent: Agent) -> dict[str, Any]:
-    if agent.heartbeat_config:
-        return agent.heartbeat_config
-    return DEFAULT_HEARTBEAT_CONFIG.copy()
+    merged = DEFAULT_HEARTBEAT_CONFIG.copy()
+    if isinstance(agent.heartbeat_config, dict):
+        merged.update(agent.heartbeat_config)
+    return merged
+
+
+def _channel_heartbeat_visibility_patch(config_data: dict[str, Any]) -> dict[str, Any] | None:
+    channels = config_data.get("channels")
+    if not isinstance(channels, dict):
+        return {"defaults": {"heartbeat": DEFAULT_CHANNEL_HEARTBEAT_VISIBILITY.copy()}}
+    defaults = channels.get("defaults")
+    if not isinstance(defaults, dict):
+        return {"defaults": {"heartbeat": DEFAULT_CHANNEL_HEARTBEAT_VISIBILITY.copy()}}
+    heartbeat = defaults.get("heartbeat")
+    if not isinstance(heartbeat, dict):
+        return {"defaults": {"heartbeat": DEFAULT_CHANNEL_HEARTBEAT_VISIBILITY.copy()}}
+    merged = dict(heartbeat)
+    changed = False
+    for key, value in DEFAULT_CHANNEL_HEARTBEAT_VISIBILITY.items():
+        if key not in merged:
+            merged[key] = value
+            changed = True
+    if not changed:
+        return None
+    return {"defaults": {"heartbeat": merged}}
 
 
 def _template_env() -> Environment:
@@ -561,7 +595,10 @@ async def _patch_gateway_agent_list(
             {"id": agent_id, "workspace": workspace_path, "heartbeat": heartbeat},
         )
 
-    patch = {"agents": {"list": new_list}}
+    patch: dict[str, Any] = {"agents": {"list": new_list}}
+    channels_patch = _channel_heartbeat_visibility_patch(data)
+    if channels_patch is not None:
+        patch["channels"] = channels_patch
     params = {"raw": json.dumps(patch)}
     if base_hash:
         params["baseHash"] = base_hash
@@ -570,7 +607,7 @@ async def _patch_gateway_agent_list(
 
 async def _gateway_config_agent_list(
     config: GatewayClientConfig,
-) -> tuple[str | None, list[object]]:
+) -> tuple[str | None, list[object], dict[str, Any]]:
     cfg = await openclaw_call("config.get", config=config)
     if not isinstance(cfg, dict):
         msg = "config.get returned invalid payload"
@@ -586,7 +623,7 @@ async def _gateway_config_agent_list(
     if not isinstance(agents_list, list):
         msg = "config agents.list is not a list"
         raise OpenClawGatewayError(msg)
-    return cfg.get("hash"), agents_list
+    return cfg.get("hash"), agents_list, data
 
 
 def _heartbeat_entry_map(
@@ -643,11 +680,14 @@ async def patch_gateway_agent_heartbeats(
         msg = "Gateway url is required"
         raise OpenClawGatewayError(msg)
     config = GatewayClientConfig(url=gateway.url, token=gateway.token)
-    base_hash, raw_list = await _gateway_config_agent_list(config)
+    base_hash, raw_list, config_data = await _gateway_config_agent_list(config)
     entry_by_id = _heartbeat_entry_map(entries)
     new_list = _updated_agent_list(raw_list, entry_by_id)
 
-    patch = {"agents": {"list": new_list}}
+    patch: dict[str, Any] = {"agents": {"list": new_list}}
+    channels_patch = _channel_heartbeat_visibility_patch(config_data)
+    if channels_patch is not None:
+        patch["channels"] = channels_patch
     params = {"raw": json.dumps(patch)}
     if base_hash:
         params["baseHash"] = base_hash
