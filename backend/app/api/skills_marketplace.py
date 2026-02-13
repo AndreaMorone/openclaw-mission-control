@@ -493,6 +493,120 @@ async def _dispatch_gateway_instruction(
     )
 
 
+async def _load_pack_skill_count_by_repo(
+    *,
+    session: AsyncSession,
+    organization_id: UUID,
+) -> dict[str, int]:
+    skills = await MarketplaceSkill.objects.filter_by(organization_id=organization_id).all(session)
+    return _build_skill_count_by_repo(skills)
+
+
+def _as_skill_pack_read_with_count(
+    *,
+    pack: SkillPack,
+    count_by_repo: dict[str, int],
+) -> SkillPackRead:
+    return _as_skill_pack_read(pack).model_copy(
+        update={"skill_count": _pack_skill_count(pack=pack, count_by_repo=count_by_repo)},
+    )
+
+
+async def _sync_gateway_installation_state(
+    *,
+    session: AsyncSession,
+    gateway_id: UUID,
+    skill_id: UUID,
+    installed: bool,
+) -> None:
+    installation = await GatewayInstalledSkill.objects.filter_by(
+        gateway_id=gateway_id,
+        skill_id=skill_id,
+    ).first(session)
+    if installed:
+        if installation is None:
+            session.add(
+                GatewayInstalledSkill(
+                    gateway_id=gateway_id,
+                    skill_id=skill_id,
+                ),
+            )
+            return
+
+        installation.updated_at = utcnow()
+        session.add(installation)
+        return
+
+    if installation is not None:
+        await session.delete(installation)
+
+
+async def _run_marketplace_skill_action(
+    *,
+    session: AsyncSession,
+    ctx: OrganizationContext,
+    skill_id: UUID,
+    gateway_id: UUID,
+    installed: bool,
+) -> MarketplaceSkillActionResponse:
+    gateway = await _require_gateway_for_org(gateway_id=gateway_id, session=session, ctx=ctx)
+    require_gateway_workspace_root(gateway)
+    skill = await _require_marketplace_skill_for_org(skill_id=skill_id, session=session, ctx=ctx)
+    instruction = (
+        _install_instruction(skill=skill, gateway=gateway)
+        if installed
+        else _uninstall_instruction(skill=skill, gateway=gateway)
+    )
+    try:
+        await _dispatch_gateway_instruction(
+            session=session,
+            gateway=gateway,
+            message=instruction,
+        )
+    except OpenClawGatewayError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    await _sync_gateway_installation_state(
+        session=session,
+        gateway_id=gateway.id,
+        skill_id=skill.id,
+        installed=installed,
+    )
+    await session.commit()
+    return MarketplaceSkillActionResponse(
+        skill_id=skill.id,
+        gateway_id=gateway.id,
+        installed=installed,
+    )
+
+
+def _apply_pack_candidate_updates(
+    *,
+    existing: MarketplaceSkill,
+    candidate: PackSkillCandidate,
+) -> bool:
+    changed = False
+    if existing.name != candidate.name:
+        existing.name = candidate.name
+        changed = True
+    if existing.description != candidate.description:
+        existing.description = candidate.description
+        changed = True
+    if existing.category != candidate.category:
+        existing.category = candidate.category
+        changed = True
+    if existing.risk != candidate.risk:
+        existing.risk = candidate.risk
+        changed = True
+    if existing.source != candidate.source:
+        existing.source = candidate.source
+        changed = True
+    return changed
+
+
 @router.get("/marketplace", response_model=list[MarketplaceSkillCardRead])
 async def list_marketplace_skills(
     gateway_id: UUID = GATEWAY_ID_QUERY,
@@ -580,39 +694,11 @@ async def install_marketplace_skill(
     ctx: OrganizationContext = ORG_ADMIN_DEP,
 ) -> MarketplaceSkillActionResponse:
     """Install a marketplace skill by dispatching instructions to the gateway agent."""
-    gateway = await _require_gateway_for_org(gateway_id=gateway_id, session=session, ctx=ctx)
-    require_gateway_workspace_root(gateway)
-    skill = await _require_marketplace_skill_for_org(skill_id=skill_id, session=session, ctx=ctx)
-    try:
-        await _dispatch_gateway_instruction(
-            session=session,
-            gateway=gateway,
-            message=_install_instruction(skill=skill, gateway=gateway),
-        )
-    except OpenClawGatewayError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
-
-    installation = await GatewayInstalledSkill.objects.filter_by(
-        gateway_id=gateway.id,
-        skill_id=skill.id,
-    ).first(session)
-    if installation is None:
-        session.add(
-            GatewayInstalledSkill(
-                gateway_id=gateway.id,
-                skill_id=skill.id,
-            ),
-        )
-    else:
-        installation.updated_at = utcnow()
-        session.add(installation)
-    await session.commit()
-    return MarketplaceSkillActionResponse(
-        skill_id=skill.id,
-        gateway_id=gateway.id,
+    return await _run_marketplace_skill_action(
+        session=session,
+        ctx=ctx,
+        skill_id=skill_id,
+        gateway_id=gateway_id,
         installed=True,
     )
 
@@ -628,31 +714,11 @@ async def uninstall_marketplace_skill(
     ctx: OrganizationContext = ORG_ADMIN_DEP,
 ) -> MarketplaceSkillActionResponse:
     """Uninstall a marketplace skill by dispatching instructions to the gateway agent."""
-    gateway = await _require_gateway_for_org(gateway_id=gateway_id, session=session, ctx=ctx)
-    require_gateway_workspace_root(gateway)
-    skill = await _require_marketplace_skill_for_org(skill_id=skill_id, session=session, ctx=ctx)
-    try:
-        await _dispatch_gateway_instruction(
-            session=session,
-            gateway=gateway,
-            message=_uninstall_instruction(skill=skill, gateway=gateway),
-        )
-    except OpenClawGatewayError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
-
-    installation = await GatewayInstalledSkill.objects.filter_by(
-        gateway_id=gateway.id,
-        skill_id=skill.id,
-    ).first(session)
-    if installation is not None:
-        await session.delete(installation)
-        await session.commit()
-    return MarketplaceSkillActionResponse(
-        skill_id=skill.id,
-        gateway_id=gateway.id,
+    return await _run_marketplace_skill_action(
+        session=session,
+        ctx=ctx,
+        skill_id=skill_id,
+        gateway_id=gateway_id,
         installed=False,
     )
 
@@ -668,14 +734,12 @@ async def list_skill_packs(
         .order_by(col(SkillPack.created_at).desc())
         .all(session)
     )
-    marketplace_skills = await MarketplaceSkill.objects.filter_by(
+    count_by_repo = await _load_pack_skill_count_by_repo(
+        session=session,
         organization_id=ctx.organization.id,
-    ).all(session)
-    count_by_repo = _build_skill_count_by_repo(marketplace_skills)
+    )
     return [
-        _as_skill_pack_read(pack).model_copy(
-            update={"skill_count": _pack_skill_count(pack=pack, count_by_repo=count_by_repo)},
-        )
+        _as_skill_pack_read_with_count(pack=pack, count_by_repo=count_by_repo)
         for pack in packs
     ]
 
@@ -688,13 +752,11 @@ async def get_skill_pack(
 ) -> SkillPackRead:
     """Get one skill pack by ID."""
     pack = await _require_skill_pack_for_org(pack_id=pack_id, session=session, ctx=ctx)
-    marketplace_skills = await MarketplaceSkill.objects.filter_by(
+    count_by_repo = await _load_pack_skill_count_by_repo(
+        session=session,
         organization_id=ctx.organization.id,
-    ).all(session)
-    count_by_repo = _build_skill_count_by_repo(marketplace_skills)
-    return _as_skill_pack_read(pack).model_copy(
-        update={"skill_count": _pack_skill_count(pack=pack, count_by_repo=count_by_repo)},
     )
+    return _as_skill_pack_read_with_count(pack=pack, count_by_repo=count_by_repo)
 
 
 @router.post("/packs", response_model=SkillPackRead)
@@ -722,7 +784,11 @@ async def create_skill_pack(
             session.add(existing)
             await session.commit()
             await session.refresh(existing)
-        return _as_skill_pack_read(existing)
+        count_by_repo = await _load_pack_skill_count_by_repo(
+            session=session,
+            organization_id=ctx.organization.id,
+        )
+        return _as_skill_pack_read_with_count(pack=existing, count_by_repo=count_by_repo)
 
     pack = SkillPack(
         organization_id=ctx.organization.id,
@@ -733,13 +799,11 @@ async def create_skill_pack(
     session.add(pack)
     await session.commit()
     await session.refresh(pack)
-    marketplace_skills = await MarketplaceSkill.objects.filter_by(
+    count_by_repo = await _load_pack_skill_count_by_repo(
+        session=session,
         organization_id=ctx.organization.id,
-    ).all(session)
-    count_by_repo = _build_skill_count_by_repo(marketplace_skills)
-    return _as_skill_pack_read(pack).model_copy(
-        update={"skill_count": _pack_skill_count(pack=pack, count_by_repo=count_by_repo)},
     )
+    return _as_skill_pack_read_with_count(pack=pack, count_by_repo=count_by_repo)
 
 
 @router.patch("/packs/{pack_id}", response_model=SkillPackRead)
@@ -770,13 +834,11 @@ async def update_skill_pack(
     session.add(pack)
     await session.commit()
     await session.refresh(pack)
-    marketplace_skills = await MarketplaceSkill.objects.filter_by(
+    count_by_repo = await _load_pack_skill_count_by_repo(
+        session=session,
         organization_id=ctx.organization.id,
-    ).all(session)
-    count_by_repo = _build_skill_count_by_repo(marketplace_skills)
-    return _as_skill_pack_read(pack).model_copy(
-        update={"skill_count": _pack_skill_count(pack=pack, count_by_repo=count_by_repo)},
     )
+    return _as_skill_pack_read_with_count(pack=pack, count_by_repo=count_by_repo)
 
 
 @router.delete("/packs/{pack_id}", response_model=OkResponse)
@@ -833,23 +895,7 @@ async def sync_skill_pack(
             created += 1
             continue
 
-        changed = False
-        if existing.name != candidate.name:
-            existing.name = candidate.name
-            changed = True
-        if existing.description != candidate.description:
-            existing.description = candidate.description
-            changed = True
-        if existing.category != candidate.category:
-            existing.category = candidate.category
-            changed = True
-        if existing.risk != candidate.risk:
-            existing.risk = candidate.risk
-            changed = True
-        if existing.source != candidate.source:
-            existing.source = candidate.source
-            changed = True
-
+        changed = _apply_pack_candidate_updates(existing=existing, candidate=candidate)
         if changed:
             existing.updated_at = utcnow()
             session.add(existing)

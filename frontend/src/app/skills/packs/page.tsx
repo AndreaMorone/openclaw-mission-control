@@ -90,6 +90,25 @@ export default function SkillsPacksPage() {
     deleteMutation.mutate({ packId: deleteTarget.id });
   };
 
+  const handleSyncPack = async (pack: SkillPackRead) => {
+    setSyncingPackIds((previous) => {
+      const next = new Set(previous);
+      next.add(pack.id);
+      return next;
+    });
+    try {
+      await syncMutation.mutateAsync({
+        packId: pack.id,
+      });
+    } finally {
+      setSyncingPackIds((previous) => {
+        const next = new Set(previous);
+        next.delete(pack.id);
+        return next;
+      });
+    }
+  };
+
   return (
     <>
       <DashboardPageLayout
@@ -125,24 +144,7 @@ export default function SkillsPacksPage() {
               canSync
               syncingPackIds={syncingPackIds}
               onSync={(pack) => {
-                void (async () => {
-                  setSyncingPackIds((previous) => {
-                    const next = new Set(previous);
-                    next.add(pack.id);
-                    return next;
-                  });
-                  try {
-                    await syncMutation.mutateAsync({
-                      packId: pack.id,
-                    });
-                  } finally {
-                    setSyncingPackIds((previous) => {
-                      const next = new Set(previous);
-                      next.delete(pack.id);
-                      return next;
-                    });
-                  }
-                })();
+                void handleSyncPack(pack);
               }}
               onDelete={setDeleteTarget}
               emptyState={{

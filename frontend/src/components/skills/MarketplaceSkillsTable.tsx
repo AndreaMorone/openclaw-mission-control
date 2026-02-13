@@ -1,11 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 
 import {
   type ColumnDef,
   type OnChangeFn,
   type SortingState,
-  type Updater,
   getCoreRowModel,
   getSortedRowModel,
   useReactTable,
@@ -15,7 +14,16 @@ import type { MarketplaceSkillCardRead } from "@/api/generated/model";
 import { DataTable, type DataTableEmptyState } from "@/components/tables/DataTable";
 import { dateCell } from "@/components/tables/cell-formatters";
 import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  SKILLS_TABLE_EMPTY_ICON,
+  useTableSortingState,
+} from "@/components/skills/table-helpers";
 import { truncateText as truncate } from "@/lib/formatters";
+import {
+  packLabelFromUrl,
+  packUrlFromSkillSourceUrl,
+  packsHrefFromPackUrl,
+} from "@/lib/skills-source";
 
 type MarketplaceSkillsTableProps = {
   skills: MarketplaceSkillCardRead[];
@@ -34,57 +42,6 @@ type MarketplaceSkillsTableProps = {
   };
 };
 
-const DEFAULT_EMPTY_ICON = (
-  <svg
-    className="h-16 w-16 text-slate-300"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M4 7h16" />
-    <path d="M4 12h16" />
-    <path d="M4 17h16" />
-    <path d="M8 7v10" />
-    <path d="M16 7v10" />
-  </svg>
-);
-
-const toPackUrl = (sourceUrl: string): string => {
-  try {
-    const parsed = new URL(sourceUrl);
-    const treeMarker = "/tree/";
-    const markerIndex = parsed.pathname.indexOf(treeMarker);
-    if (markerIndex > 0) {
-      const repoPath = parsed.pathname.slice(0, markerIndex);
-      return `${parsed.origin}${repoPath}`;
-    }
-    return sourceUrl;
-  } catch {
-    return sourceUrl;
-  }
-};
-
-const toPackLabel = (packUrl: string): string => {
-  try {
-    const parsed = new URL(packUrl);
-    const segments = parsed.pathname.split("/").filter(Boolean);
-    if (segments.length >= 2) {
-      return `${segments[0]}/${segments[1]}`;
-    }
-    return parsed.host;
-  } catch {
-    return "Open pack";
-  }
-};
-
-const toPacksHref = (packUrl: string): string => {
-  const params = new URLSearchParams({ source_url: packUrl });
-  return `/skills/packs?${params.toString()}`;
-};
-
 export function MarketplaceSkillsTable({
   skills,
   installedGatewayNamesBySkillId,
@@ -99,15 +56,11 @@ export function MarketplaceSkillsTable({
   getEditHref,
   emptyState,
 }: MarketplaceSkillsTableProps) {
-  const [internalSorting, setInternalSorting] = useState<SortingState>([
-    { id: "name", desc: false },
-  ]);
-  const resolvedSorting = sorting ?? internalSorting;
-  const handleSortingChange: OnChangeFn<SortingState> =
-    onSortingChange ??
-    ((updater: Updater<SortingState>) => {
-      setInternalSorting(updater);
-    });
+  const { resolvedSorting, handleSortingChange } = useTableSortingState(
+    sorting,
+    onSortingChange,
+    [{ id: "name", desc: false }],
+  );
 
   const columns = useMemo<ColumnDef<MarketplaceSkillCardRead>[]>(() => {
     const baseColumns: ColumnDef<MarketplaceSkillCardRead>[] = [
@@ -140,13 +93,13 @@ export function MarketplaceSkillsTable({
         accessorKey: "source_url",
         header: "Pack",
         cell: ({ row }) => {
-          const packUrl = toPackUrl(row.original.source_url);
+          const packUrl = packUrlFromSkillSourceUrl(row.original.source_url);
           return (
             <Link
-              href={toPacksHref(packUrl)}
+              href={packsHrefFromPackUrl(packUrl)}
               className="inline-flex items-center gap-1 text-sm font-medium text-slate-700 hover:text-blue-600"
             >
-              {truncate(toPackLabel(packUrl), 40)}
+              {truncate(packLabelFromUrl(packUrl), 40)}
             </Link>
           );
         },
@@ -271,7 +224,7 @@ export function MarketplaceSkillsTable({
       emptyState={
         emptyState
           ? {
-              icon: emptyState.icon ?? DEFAULT_EMPTY_ICON,
+              icon: emptyState.icon ?? SKILLS_TABLE_EMPTY_ICON,
               title: emptyState.title,
               description: emptyState.description,
               actionHref: emptyState.actionHref,

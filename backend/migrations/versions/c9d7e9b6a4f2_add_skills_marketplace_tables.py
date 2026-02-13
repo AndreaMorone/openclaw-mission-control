@@ -38,6 +38,9 @@ def upgrade() -> None:
             sa.Column("organization_id", sa.Uuid(), nullable=False),
             sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
             sa.Column("description", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+            sa.Column("category", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+            sa.Column("risk", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+            sa.Column("source", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
             sa.Column("source_url", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
             sa.Column("created_at", sa.DateTime(), nullable=False),
             sa.Column("updated_at", sa.DateTime(), nullable=False),
@@ -105,8 +108,49 @@ def upgrade() -> None:
             unique=False,
         )
 
+    if not _has_table("skill_packs"):
+        op.create_table(
+            "skill_packs",
+            sa.Column("id", sa.Uuid(), nullable=False),
+            sa.Column("organization_id", sa.Uuid(), nullable=False),
+            sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+            sa.Column("description", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+            sa.Column("source_url", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+            sa.Column("created_at", sa.DateTime(), nullable=False),
+            sa.Column("updated_at", sa.DateTime(), nullable=False),
+            sa.ForeignKeyConstraint(
+                ["organization_id"],
+                ["organizations.id"],
+            ),
+            sa.PrimaryKeyConstraint("id"),
+            sa.UniqueConstraint(
+                "organization_id",
+                "source_url",
+                name="uq_skill_packs_org_source_url",
+            ),
+        )
+
+    skill_packs_org_idx = op.f("ix_skill_packs_organization_id")
+    if not _has_index("skill_packs", skill_packs_org_idx):
+        op.create_index(
+            skill_packs_org_idx,
+            "skill_packs",
+            ["organization_id"],
+            unique=False,
+        )
+
 
 def downgrade() -> None:
+    skill_packs_org_idx = op.f("ix_skill_packs_organization_id")
+    if _has_index("skill_packs", skill_packs_org_idx):
+        op.drop_index(
+            skill_packs_org_idx,
+            table_name="skill_packs",
+        )
+
+    if _has_table("skill_packs"):
+        op.drop_table("skill_packs")
+
     gateway_skill_idx = op.f("ix_gateway_installed_skills_skill_id")
     if _has_index("gateway_installed_skills", gateway_skill_idx):
         op.drop_index(

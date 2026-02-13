@@ -1,11 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 
 import {
   type ColumnDef,
   type OnChangeFn,
   type SortingState,
-  type Updater,
   getCoreRowModel,
   getSortedRowModel,
   useReactTable,
@@ -15,6 +14,10 @@ import type { SkillPackRead } from "@/api/generated/model";
 import { DataTable, type DataTableEmptyState } from "@/components/tables/DataTable";
 import { dateCell } from "@/components/tables/cell-formatters";
 import { Button } from "@/components/ui/button";
+import {
+  SKILLS_TABLE_EMPTY_ICON,
+  useTableSortingState,
+} from "@/components/skills/table-helpers";
 import { truncateText as truncate } from "@/lib/formatters";
 
 type SkillPacksTableProps = {
@@ -33,24 +36,6 @@ type SkillPacksTableProps = {
   };
 };
 
-const DEFAULT_EMPTY_ICON = (
-  <svg
-    className="h-16 w-16 text-slate-300"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M4 7h16" />
-    <path d="M4 12h16" />
-    <path d="M4 17h16" />
-    <path d="M8 7v10" />
-    <path d="M16 7v10" />
-  </svg>
-);
-
 export function SkillPacksTable({
   packs,
   isLoading = false,
@@ -64,15 +49,11 @@ export function SkillPacksTable({
   getEditHref,
   emptyState,
 }: SkillPacksTableProps) {
-  const [internalSorting, setInternalSorting] = useState<SortingState>([
-    { id: "name", desc: false },
-  ]);
-  const resolvedSorting = sorting ?? internalSorting;
-  const handleSortingChange: OnChangeFn<SortingState> =
-    onSortingChange ??
-    ((updater: Updater<SortingState>) => {
-      setInternalSorting(updater);
-    });
+  const { resolvedSorting, handleSortingChange } = useTableSortingState(
+    sorting,
+    onSortingChange,
+    [{ id: "name", desc: false }],
+  );
 
   const columns = useMemo<ColumnDef<SkillPackRead>[]>(() => {
     const baseColumns: ColumnDef<SkillPackRead>[] = [
@@ -175,7 +156,7 @@ export function SkillPacksTable({
       emptyState={
         emptyState
           ? {
-              icon: emptyState.icon ?? DEFAULT_EMPTY_ICON,
+              icon: emptyState.icon ?? SKILLS_TABLE_EMPTY_ICON,
               title: emptyState.title,
               description: emptyState.description,
               actionHref: emptyState.actionHref,
