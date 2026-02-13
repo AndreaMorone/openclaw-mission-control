@@ -3,7 +3,12 @@
 export const dynamic = "force-dynamic";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import {
+  useParams,
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 
 import { SignInButton, SignedIn, SignedOut, useAuth } from "@/auth/clerk";
 import {
@@ -31,6 +36,7 @@ import {
 import { DashboardShell } from "@/components/templates/DashboardShell";
 import { BoardChatComposer } from "@/components/BoardChatComposer";
 import { TaskCustomFieldsEditor } from "./TaskCustomFieldsEditor";
+import { buildUrlWithTaskId } from "./task-detail-query";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -702,6 +708,7 @@ LiveFeedCard.displayName = "LiveFeedCard";
 export default function BoardDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const boardIdParam = params?.boardId;
   const boardId = Array.isArray(boardIdParam) ? boardIdParam[0] : boardIdParam;
@@ -781,6 +788,7 @@ export default function BoardDetailPage() {
     null,
   );
   const [isLoading, setIsLoading] = useState(false);
+  const [hasLoadedBoardSnapshot, setHasLoadedBoardSnapshot] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const selectedTaskIdRef = useRef<string | null>(null);
@@ -1172,6 +1180,7 @@ export default function BoardDetailPage() {
 
   const loadBoard = useCallback(async () => {
     if (!isSignedIn || !boardId) return;
+    setHasLoadedBoardSnapshot(false);
     setIsLoading(true);
     setIsApprovalsLoading(true);
     setError(null);
@@ -1225,6 +1234,7 @@ export default function BoardDetailPage() {
     } finally {
       setIsLoading(false);
       setIsApprovalsLoading(false);
+      setHasLoadedBoardSnapshot(true);
     }
   }, [boardId, isSignedIn]);
 
@@ -2339,12 +2349,21 @@ export default function BoardDetailPage() {
       setIsLiveFeedOpen(false);
       const fullTask = tasksRef.current.find((item) => item.id === task.id);
       if (!fullTask) return;
+      const currentTaskIdFromUrl = searchParams.get("taskId");
+      if (currentTaskIdFromUrl !== fullTask.id) {
+        router.replace(
+          buildUrlWithTaskId(pathname, searchParams, fullTask.id),
+          {
+            scroll: false,
+          },
+        );
+      }
       selectedTaskIdRef.current = fullTask.id;
       setSelectedTask(fullTask);
       setIsDetailOpen(true);
       void loadComments(task.id);
     },
-    [loadComments],
+    [loadComments, pathname, router, searchParams],
   );
 
   const selectedTaskDependencies = useMemo<DependencyBannerDependency[]>(() => {
@@ -2398,15 +2417,38 @@ export default function BoardDetailPage() {
   }, [openComments, selectedTask, tasks]);
 
   useEffect(() => {
-    if (!taskIdFromUrl) return;
+    if (!hasLoadedBoardSnapshot) return;
+    if (!taskIdFromUrl) {
+      openedTaskIdFromUrlRef.current = null;
+      return;
+    }
     if (openedTaskIdFromUrlRef.current === taskIdFromUrl) return;
     const exists = tasks.some((task) => task.id === taskIdFromUrl);
-    if (!exists) return;
+    if (!exists) {
+      router.replace(buildUrlWithTaskId(pathname, searchParams, null), {
+        scroll: false,
+      });
+      return;
+    }
     openedTaskIdFromUrlRef.current = taskIdFromUrl;
     openComments({ id: taskIdFromUrl });
-  }, [openComments, taskIdFromUrl, tasks]);
+  }, [
+    hasLoadedBoardSnapshot,
+    openComments,
+    pathname,
+    router,
+    searchParams,
+    taskIdFromUrl,
+    tasks,
+  ]);
 
   const closeComments = () => {
+    openedTaskIdFromUrlRef.current = null;
+    if (searchParams.get("taskId")) {
+      router.replace(buildUrlWithTaskId(pathname, searchParams, null), {
+        scroll: false,
+      });
+    }
     setIsDetailOpen(false);
     selectedTaskIdRef.current = null;
     setSelectedTask(null);
