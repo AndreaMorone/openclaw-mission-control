@@ -216,7 +216,6 @@ install_command_hint() {
 
 detect_platform() {
   local uname_s
-  local id_like
   uname_s="$(uname -s)"
   if [[ "$uname_s" != "Linux" ]]; then
     die "Unsupported platform: $uname_s. Linux is required."
@@ -229,7 +228,7 @@ detect_platform() {
   # shellcheck disable=SC1091
   . /etc/os-release
   LINUX_DISTRO="${ID:-unknown}"
-  id_like="${ID_LIKE:-}"
+  # ID_LIKE is available via /etc/os-release when we need it for future detection heuristics.
 
   if command_exists apt-get; then
     PKG_MANAGER="apt"
