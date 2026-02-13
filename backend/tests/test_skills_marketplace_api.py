@@ -19,6 +19,7 @@ from app.api.gateways import router as gateways_router
 from app.api.skills_marketplace import (
     PackSkillCandidate,
     _collect_pack_skills_from_repo,
+    _validate_pack_source_url,
     router as skills_marketplace_router,
 )
 from app.db.session import get_session
@@ -395,6 +396,33 @@ async def test_sync_pack_clones_and_upserts_skills(monkeypatch: pytest.MonkeyPat
             )
     finally:
         await engine.dispose()
+
+
+def test_validate_pack_source_url_allows_https_github_repo_with_optional_dot_git() -> None:
+    _validate_pack_source_url("https://github.com/org/repo")
+    _validate_pack_source_url("https://github.com/org/repo.git")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://github.com/org/repo",
+        "file:///tmp/repo",
+        "ssh://github.com/org/repo",
+        "https://localhost/repo",
+        "https://127.0.0.1/repo",
+        "https://[::1]/repo",
+    ],
+)
+def test_validate_pack_source_url_rejects_unsafe_urls(url: str) -> None:
+    with pytest.raises(ValueError):
+        _validate_pack_source_url(url)
+
+
+def test_validate_pack_source_url_rejects_git_ssh_scp_like_syntax() -> None:
+    # Not a URL, but worth asserting we fail closed.
+    with pytest.raises(ValueError):
+        _validate_pack_source_url("git@github.com:org/repo.git")
 
 
 @pytest.mark.asyncio
