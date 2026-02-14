@@ -145,6 +145,18 @@ function parsePageSizeParam(value: string | null) {
   return MARKETPLACE_DEFAULT_PAGE_SIZE;
 }
 
+/**
+ * Skills Marketplace admin page.
+ *
+ * Data-flow notes:
+ * - URL query params are treated as the shareable source-of-truth for filters
+ *   and pagination (we mirror local state -> URL via `router.replace`).
+ * - We keep a *separate* query (without pagination) for building filter option
+ *   lists (categories/risks) so options don't disappear just because the current
+ *   page is filtered/paginated.
+ * - Total row count is best-effort: when the API provides `x-total-count`, we
+ *   use it; otherwise we infer whether there is a next page from page-size.
+ */
 export default function SkillsMarketplacePage() {
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -247,6 +259,8 @@ export default function SkillsMarketplacePage() {
     resolvedGatewayId,
     selectedPackId,
   ]);
+  // Fetch a non-paginated (or minimally constrained) slice for building filter options.
+  // Keeping this separate avoids "missing" categories/risks when the main list is paginated.
   const filterOptionsParams = useMemo<MarketplaceSkillListParams>(() => {
     const params: MarketplaceSkillListParams = {
       gateway_id: resolvedGatewayId,
@@ -314,6 +328,8 @@ export default function SkillsMarketplacePage() {
   );
 
   const filteredSkills = useMemo(() => skills, [skills]);
+  // Prefer the API total-count header when available (true pagination).
+  // When missing, we fall back to a heuristic for "has next page".
   const totalCountInfo = useMemo(() => {
     if (skillsQuery.data?.status !== 200) {
       return { hasKnownTotal: false, total: skills.length };
@@ -435,6 +451,9 @@ export default function SkillsMarketplacePage() {
     }
   }, [currentPage, totalCountInfo.hasKnownTotal, totalPages]);
 
+  // Mirror local filter/page state back into the URL so the view is shareable and
+  // back/forward navigation works. We use `replace` (not push) to avoid filling
+  // browser history with every keystroke / filter tweak.
   useEffect(() => {
     const nextParams = new URLSearchParams(searchParams.toString());
     const normalizedSearchForUrl = searchTerm.trim();

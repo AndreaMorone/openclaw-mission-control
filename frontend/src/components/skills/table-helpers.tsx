@@ -26,6 +26,13 @@ export const SKILLS_TABLE_EMPTY_ICON = (
   </svg>
 );
 
+/**
+ * Small helper for supporting both controlled and uncontrolled table sorting.
+ *
+ * TanStack Table expects a `sorting` state + `onSortingChange` callback.
+ * Some pages want to control this from the URL (shareable links), while others
+ * are fine letting the table manage it internally.
+ */
 export const useTableSortingState = (
   sorting: SortingState | undefined,
   onSortingChange: OnChangeFn<SortingState> | undefined,

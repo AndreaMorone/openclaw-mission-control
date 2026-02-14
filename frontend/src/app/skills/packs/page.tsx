@@ -32,6 +32,15 @@ const PACKS_SORTABLE_COLUMNS = [
   "updated_at",
 ];
 
+/**
+ * Skill packs admin page.
+ *
+ * Notes:
+ * - Sync actions are intentionally serialized (per-pack) to avoid a thundering herd
+ *   of GitHub fetches / backend sync jobs.
+ * - We keep UI state (`syncingPackIds`, warnings) local; the canonical list is
+ *   still React Query (invalidate after sync/delete).
+ */
 export default function SkillsPacksPage() {
   const queryClient = useQueryClient();
   const { isSignedIn } = useAuth();
@@ -141,6 +150,8 @@ export default function SkillsPacksPage() {
     try {
       let hasFailure = false;
 
+      // Run sequentially so the UI remains predictable and the backend isn't hit with
+      // concurrent sync bursts (which can trigger rate-limits).
       for (const pack of packs) {
         if (!pack.id) continue;
         setSyncingPackIds((previous) => {

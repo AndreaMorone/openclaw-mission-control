@@ -48,6 +48,12 @@ const extractErrorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+/**
+ * Form used for creating/editing a marketplace skill source.
+ *
+ * Intentionally keeps validation lightweight + client-side only:
+ * the backend remains the source of truth and returns actionable errors.
+ */
 export function MarketplaceSkillForm({
   initialValues,
   sourceUrlReadOnly = false,
@@ -80,6 +86,13 @@ export function MarketplaceSkillForm({
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  /**
+   * Basic repo URL validation.
+   *
+   * This is strict by design (https + github.com + at least owner/repo)
+   * to catch obvious mistakes early. More complex URLs (subpaths, branches)
+   * are handled server-side.
+   */
   const isValidSourceUrl = (value: string) => {
     try {
       const parsed = new URL(value);
