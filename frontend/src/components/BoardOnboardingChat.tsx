@@ -247,12 +247,17 @@ export function BoardOnboardingChat({
     void startSession();
   }, [startSession]);
 
+  const shouldPollSession =
+    isPageActive && (loading || isAwaitingAgent || (!question && !draft));
+
   useEffect(() => {
-    if (!isPageActive) return;
+    if (!shouldPollSession) return;
     void refreshSession();
-    const interval = setInterval(refreshSession, 2000);
+    const interval = setInterval(() => {
+      void refreshSession();
+    }, 2000);
     return () => clearInterval(interval);
-  }, [isPageActive, refreshSession]);
+  }, [refreshSession, shouldPollSession]);
 
   const handleAnswer = useCallback(
     async (value: string, freeText?: string) => {
