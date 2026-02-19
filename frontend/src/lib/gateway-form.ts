@@ -13,6 +13,10 @@ export const validateGatewayUrl = (value: string) => {
       return "Gateway URL must start with ws:// or wss://.";
     }
     if (!url.port) {
+      // Allow default port when scheme is wss (443) or ws (80)
+      if ((url.protocol === "wss:" && url.hostname) || (url.protocol === "ws:" && url.hostname)) {
+        return null;
+      }
       return "Gateway URL must include an explicit port.";
     }
     return null;
