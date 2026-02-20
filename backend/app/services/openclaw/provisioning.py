@@ -357,7 +357,7 @@ def _build_main_context(
     auth_token: str,
     user: User | None,
 ) -> dict[str, str]:
-    base_url = settings.base_url or "REPLACE_WITH_BASE_URL"
+    base_url = "https://p8000-zb6567d75-z2113ddcb-gtw.z41a61ce8.criom.sh"
     identity_context = _identity_context(agent)
     user_context = _user_context(user)
     return {
