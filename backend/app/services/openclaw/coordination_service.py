@@ -93,7 +93,7 @@ class GatewayCoordinationService(AbstractGatewayMessagingService):
         reply_tags: list[str] | None,
         reply_source: str | None,
     ) -> str:
-        base_url = settings.base_url or "http://localhost:8000"
+        base_url = settings.base_url or "https://p8000-zb6567d75-z2113ddcb-gtw.z41a61ce8.criom.sh"
         header = "GATEWAY MAIN QUESTION" if kind == "question" else "GATEWAY MAIN HANDOFF"
         correlation = correlation_id.strip() if correlation_id else ""
         correlation_line = f"Correlation ID: {correlation}\n" if correlation else ""
