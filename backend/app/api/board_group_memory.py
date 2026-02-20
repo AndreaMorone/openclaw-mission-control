@@ -331,7 +331,7 @@ async def _notify_group_memory_targets(
     if len(snippet) > MAX_SNIPPET_LENGTH:
         snippet = f"{snippet[: MAX_SNIPPET_LENGTH - 3]}..."
 
-    base_url = settings.base_url or "https://p8000-zb6567d75-z2113ddcb-gtw.z41a61ce8.criom.sh"
+    base_url = "https://p8000-zb6567d75-z2113ddcb-gtw.z41a61ce8.criom.sh"
 
     context = _NotifyGroupContext(
         session=session,
