@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     clerk_leeway: float = 10.0
 
     cors_origins: str = ""
-    base_url: str = ""
+    base_url: str = "https://p8000-zb6567d75-z2113ddcb-gtw.z41a61ce8.criom.sh/"
 
     # Database lifecycle
     db_auto_migrate: bool = False
