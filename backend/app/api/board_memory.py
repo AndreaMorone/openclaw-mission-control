@@ -191,7 +191,7 @@ async def _notify_chat_targets(
     snippet = memory.content.strip()
     if len(snippet) > MAX_SNIPPET_LENGTH:
         snippet = f"{snippet[: MAX_SNIPPET_LENGTH - 3]}..."
-    base_url = settings.base_url or "http://localhost:8000"
+    base_url = settings.base_url or "https://p8000-zb6567d75-z2113ddcb-gtw.z41a61ce8.criom.sh"
     for agent in targets.values():
         if not agent.openclaw_session_id:
             continue
