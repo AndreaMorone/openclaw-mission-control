@@ -2,7 +2,7 @@
 
 This package is the **Next.js** web UI for OpenClaw Mission Control.
 
-- Talks to the Mission Control **backend** over HTTP (typically `http://localhost:8000`).
+- Talks to the Mission Control **backend** over HTTP (typically `http://localhost:8000](https://p8000-zb6567d75-z2113ddcb-gtw.z41a61ce8.criom.sh`).
 - Uses **React Query** for data fetching.
 - Supports two auth modes:
   - **local** shared bearer token mode (self-host default)
