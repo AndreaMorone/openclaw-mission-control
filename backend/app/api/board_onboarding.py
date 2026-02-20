@@ -229,7 +229,7 @@ async def start_onboarding(
         return onboarding
 
     dispatcher = BoardOnboardingMessagingService(session)
-    base_url = settings.base_url or "https://p8000-zb6567d75-z2113ddcb-gtw.z41a61ce8.criom.sh"
+    base_url = "https://p8000-zb6567d75-z2113ddcb-gtw.z41a61ce8.criom.sh"
     prompt = (
         "BOARD ONBOARDING REQUEST\n\n"
         f"Board Name: {board.name}\n"
