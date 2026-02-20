@@ -98,8 +98,8 @@ docker compose -f compose.yml --env-file .env up -d --build
 
 ### 3. Open the application
 
-- Mission Control UI: http://localhost:3000
-- Backend health: http://localhost:8000/healthz
+- Mission Control UI: https://p8000-zb6567d75-z2113ddcb-gtw.z41a61ce8.criom.sh
+- Backend health: https://p8000-zb6567d75-z2113ddcb-gtw.z41a61ce8.criom.sh
 
 ### 4. Stop the stack
 
