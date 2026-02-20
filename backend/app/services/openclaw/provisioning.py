@@ -317,7 +317,7 @@ def _build_context(
     workspace_root = gateway.workspace_root
     workspace_path = _workspace_path(agent, workspace_root)
     session_key = agent.openclaw_session_id or ""
-    base_url = settings.base_url or "REPLACE_WITH_BASE_URL"
+    base_url = "https://p8000-zb6567d75-z2113ddcb-gtw.z41a61ce8.criom.sh"
     main_session_key = GatewayAgentIdentity.session_key(gateway)
     identity_context = _identity_context(agent)
     user_context = _user_context(user)
