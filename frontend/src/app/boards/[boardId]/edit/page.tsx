@@ -9,7 +9,7 @@ import { useAuth } from "@/auth/clerk";
 import { X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { ApiError } from "@/api/mutator";
+import { ApiError, customFetch } from "@/api/mutator";
 import {
   type getBoardApiV1BoardsBoardIdGetResponse,
   useGetBoardApiV1BoardsBoardIdGet,
@@ -310,6 +310,7 @@ export default function EditBoardPage() {
   const [webhookAgentValue, setWebhookAgentValue] = useState(LEAD_AGENT_VALUE);
   const [webhookError, setWebhookError] = useState<string | null>(null);
   const [copiedWebhookId, setCopiedWebhookId] = useState<string | null>(null);
+  const [leadAgentId, setLeadAgentId] = useState<string | undefined>(undefined);
 
   const onboardingParam = searchParams.get("onboarding");
   const searchParamsString = searchParams.toString();
@@ -520,6 +521,21 @@ export default function EditBoardPage() {
     targetDate ?? toLocalDateInput(baseBoard?.target_date);
 
   const displayGatewayId = resolvedGatewayId || gateways[0]?.id || "";
+
+  // Fetch all agents on the gateway for lead-agent selection.
+  const gatewayAgentsQuery = useListAgentsApiV1AgentsGet<
+    listAgentsApiV1AgentsGetResponse,
+    ApiError
+  >(
+    { gateway_id: displayGatewayId || null, limit: 200 },
+    {
+      query: {
+        enabled: Boolean(isSignedIn && isAdmin && displayGatewayId),
+        refetchOnMount: "always",
+        retry: false,
+      },
+    },
+  );
   const isWebhookCreating = createWebhookMutation.isPending;
   const deletingWebhookId =
     deleteWebhookMutation.isPending && deleteWebhookMutation.variables
@@ -576,6 +592,29 @@ export default function EditBoardPage() {
     if (agentsQuery.data?.status !== 200) return [];
     return agentsQuery.data.data.items ?? [];
   }, [agentsQuery.data]);
+
+  const gatewayAgents = useMemo<AgentRead[]>(() => {
+    if (gatewayAgentsQuery.data?.status !== 200) return [];
+    return gatewayAgentsQuery.data.data.items ?? [];
+  }, [gatewayAgentsQuery.data]);
+
+  const currentLeadAgent = useMemo(
+    () => webhookAgents.find((a) => a.is_board_lead) ?? null,
+    [webhookAgents],
+  );
+
+  const resolvedLeadAgentId = leadAgentId ?? currentLeadAgent?.id ?? "";
+
+  const leadAgentOptions = useMemo(
+    () => [
+      { value: "", label: "No lead agent" },
+      ...gatewayAgents.map((agent) => ({
+        value: agent.id,
+        label: `${agent.name}${agent.is_board_lead ? " (current lead)" : ""}`,
+      })),
+    ],
+    [gatewayAgents],
+  );
   const webhooks = useMemo<BoardWebhookRead[]>(() => {
     if (webhooksQuery.data?.status !== 200) return [];
     return webhooksQuery.data.data.items ?? [];
@@ -667,7 +706,29 @@ export default function EditBoardPage() {
           : localDateInputToUtcIso(resolvedTargetDate),
     };
 
-    updateBoardMutation.mutate({ boardId, data: payload });
+    updateBoardMutation.mutate(
+      { boardId, data: payload },
+      {
+        onSuccess: async (result) => {
+          if (result.status !== 200) return;
+          // Assign lead agent if changed.
+          const currentId = currentLeadAgent?.id ?? "";
+          if (resolvedLeadAgentId && resolvedLeadAgentId !== currentId) {
+            try {
+              await customFetch(`/api/v1/boards/${boardId}/lead`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ agent_id: resolvedLeadAgentId }),
+              });
+            } catch {
+              setError("Board saved but failed to assign lead agent.");
+              return;
+            }
+          }
+          router.push(`/boards/${result.data.id}`);
+        },
+      },
+    );
   };
 
   const handleCreateWebhook = () => {
@@ -765,8 +826,8 @@ export default function EditBoardPage() {
             className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
           >
             {resolvedBoardType !== "general" &&
-            baseBoard &&
-            !(baseBoard.goal_confirmed ?? false) ? (
+              baseBoard &&
+              !(baseBoard.goal_confirmed ?? false) ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-amber-900">
@@ -814,6 +875,30 @@ export default function EditBoardPage() {
                   contentClassName="rounded-xl border border-slate-200 shadow-lg"
                   itemClassName="px-4 py-3 text-sm text-slate-700 data-[selected=true]:bg-slate-50 data-[selected=true]:text-slate-900"
                 />
+              </div>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-900">
+                  Board lead
+                </label>
+                <SearchableSelect
+                  ariaLabel="Select board lead"
+                  value={resolvedLeadAgentId}
+                  onValueChange={setLeadAgentId}
+                  options={leadAgentOptions}
+                  placeholder="No lead agent"
+                  searchPlaceholder="Search agents..."
+                  emptyMessage="No agents found."
+                  triggerClassName="w-full h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                  contentClassName="rounded-xl border border-slate-200 shadow-lg"
+                  itemClassName="px-4 py-3 text-sm text-slate-700 data-[selected=true]:bg-slate-50 data-[selected=true]:text-slate-900"
+                  disabled={isLoading}
+                />
+                <p className="text-xs text-slate-500">
+                  Select an agent to act as lead for this board.
+                </p>
               </div>
             </div>
 
@@ -957,18 +1042,16 @@ export default function EditBoardPage() {
                     setRequireApprovalForDone(!resolvedRequireApprovalForDone)
                   }
                   disabled={isLoading}
-                  className={`mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition ${
-                    resolvedRequireApprovalForDone
-                      ? "border-emerald-600 bg-emerald-600"
-                      : "border-slate-300 bg-slate-200"
-                  } ${isLoading ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                  className={`mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition ${resolvedRequireApprovalForDone
+                    ? "border-emerald-600 bg-emerald-600"
+                    : "border-slate-300 bg-slate-200"
+                    } ${isLoading ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                 >
                   <span
-                    className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition ${
-                      resolvedRequireApprovalForDone
-                        ? "translate-x-5"
-                        : "translate-x-0.5"
-                    }`}
+                    className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition ${resolvedRequireApprovalForDone
+                      ? "translate-x-5"
+                      : "translate-x-0.5"
+                      }`}
                   />
                 </button>
                 <span className="space-y-1">
@@ -992,18 +1075,16 @@ export default function EditBoardPage() {
                     setRequireReviewBeforeDone(!resolvedRequireReviewBeforeDone)
                   }
                   disabled={isLoading}
-                  className={`mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition ${
-                    resolvedRequireReviewBeforeDone
-                      ? "border-emerald-600 bg-emerald-600"
-                      : "border-slate-300 bg-slate-200"
-                  } ${isLoading ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                  className={`mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition ${resolvedRequireReviewBeforeDone
+                    ? "border-emerald-600 bg-emerald-600"
+                    : "border-slate-300 bg-slate-200"
+                    } ${isLoading ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                 >
                   <span
-                    className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition ${
-                      resolvedRequireReviewBeforeDone
-                        ? "translate-x-5"
-                        : "translate-x-0.5"
-                    }`}
+                    className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition ${resolvedRequireReviewBeforeDone
+                      ? "translate-x-5"
+                      : "translate-x-0.5"
+                      }`}
                   />
                 </button>
                 <span className="space-y-1">
@@ -1028,18 +1109,16 @@ export default function EditBoardPage() {
                     )
                   }
                   disabled={isLoading}
-                  className={`mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition ${
-                    resolvedBlockStatusChangesWithPendingApproval
-                      ? "border-emerald-600 bg-emerald-600"
-                      : "border-slate-300 bg-slate-200"
-                  } ${isLoading ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                  className={`mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition ${resolvedBlockStatusChangesWithPendingApproval
+                    ? "border-emerald-600 bg-emerald-600"
+                    : "border-slate-300 bg-slate-200"
+                    } ${isLoading ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                 >
                   <span
-                    className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition ${
-                      resolvedBlockStatusChangesWithPendingApproval
-                        ? "translate-x-5"
-                        : "translate-x-0.5"
-                    }`}
+                    className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition ${resolvedBlockStatusChangesWithPendingApproval
+                      ? "translate-x-5"
+                      : "translate-x-0.5"
+                      }`}
                   />
                 </button>
                 <span className="space-y-1">
@@ -1062,18 +1141,16 @@ export default function EditBoardPage() {
                     setOnlyLeadCanChangeStatus(!resolvedOnlyLeadCanChangeStatus)
                   }
                   disabled={isLoading}
-                  className={`mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition ${
-                    resolvedOnlyLeadCanChangeStatus
-                      ? "border-emerald-600 bg-emerald-600"
-                      : "border-slate-300 bg-slate-200"
-                  } ${isLoading ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                  className={`mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition ${resolvedOnlyLeadCanChangeStatus
+                    ? "border-emerald-600 bg-emerald-600"
+                    : "border-slate-300 bg-slate-200"
+                    } ${isLoading ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                 >
                   <span
-                    className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition ${
-                      resolvedOnlyLeadCanChangeStatus
-                        ? "translate-x-5"
-                        : "translate-x-0.5"
-                    }`}
+                    className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition ${resolvedOnlyLeadCanChangeStatus
+                      ? "translate-x-5"
+                      : "translate-x-0.5"
+                      }`}
                   />
                 </button>
                 <span className="space-y-1">

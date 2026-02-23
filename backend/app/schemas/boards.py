@@ -102,3 +102,9 @@ class BoardRead(BoardBase):
     organization_id: UUID
     created_at: datetime
     updated_at: datetime
+
+
+class BoardLeadAssign(SQLModel):
+    """Payload for assigning an existing agent as board lead."""
+
+    agent_id: UUID

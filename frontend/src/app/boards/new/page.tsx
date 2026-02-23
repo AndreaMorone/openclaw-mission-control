@@ -8,8 +8,12 @@ import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/auth/clerk";
 
-import { ApiError } from "@/api/mutator";
+import { ApiError, customFetch } from "@/api/mutator";
 import { useCreateBoardApiV1BoardsPost } from "@/api/generated/boards/boards";
+import {
+  type listAgentsApiV1AgentsGetResponse,
+  useListAgentsApiV1AgentsGet,
+} from "@/api/generated/agents/agents";
 import {
   type listBoardGroupsApiV1BoardGroupsGetResponse,
   useListBoardGroupsApiV1BoardGroupsGet,
@@ -19,7 +23,7 @@ import {
   useListGatewaysApiV1GatewaysGet,
 } from "@/api/generated/gateways/gateways";
 import { useOrganizationMembership } from "@/lib/use-organization-membership";
-import type { BoardGroupRead } from "@/api/generated/model";
+import type { AgentRead, BoardGroupRead } from "@/api/generated/model";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +49,7 @@ export default function NewBoardPage() {
   const [boardGroupId, setBoardGroupId] = useState<string>("none");
 
   const [error, setError] = useState<string | null>(null);
+  const [leadAgentId, setLeadAgentId] = useState<string>("");
 
   const gatewaysQuery = useListGatewaysApiV1GatewaysGet<
     listGatewaysApiV1GatewaysGetResponse,
@@ -72,7 +77,22 @@ export default function NewBoardPage() {
     mutation: {
       onSuccess: (result) => {
         if (result.status === 200) {
-          router.push(`/boards/${result.data.id}/edit?onboarding=1`);
+          const newBoardId = result.data.id;
+          // Assign lead agent if selected, then redirect.
+          if (leadAgentId) {
+            customFetch(`/api/v1/boards/${newBoardId}/lead`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ agent_id: leadAgentId }),
+            })
+              .then(() => router.push(`/boards/${newBoardId}/edit?onboarding=1`))
+              .catch(() => {
+                setError("Board created but failed to assign lead agent.");
+                router.push(`/boards/${newBoardId}/edit?onboarding=1`);
+              });
+          } else {
+            router.push(`/boards/${newBoardId}/edit?onboarding=1`);
+          }
         }
       },
       onError: (err) => {
@@ -90,6 +110,37 @@ export default function NewBoardPage() {
     return groupsQuery.data.data.items ?? [];
   }, [groupsQuery.data]);
   const displayGatewayId = gatewayId || gateways[0]?.id || "";
+
+  // Fetch all agents on the selected gateway for lead-agent selection.
+  const gatewayAgentsQuery = useListAgentsApiV1AgentsGet<
+    listAgentsApiV1AgentsGetResponse,
+    ApiError
+  >(
+    { gateway_id: displayGatewayId || null, limit: 200 },
+    {
+      query: {
+        enabled: Boolean(isSignedIn && isAdmin && displayGatewayId),
+        refetchOnMount: "always",
+        retry: false,
+      },
+    },
+  );
+
+  const gatewayAgents = useMemo<AgentRead[]>(() => {
+    if (gatewayAgentsQuery.data?.status !== 200) return [];
+    return gatewayAgentsQuery.data.data.items ?? [];
+  }, [gatewayAgentsQuery.data]);
+
+  const leadAgentOptions = useMemo(
+    () => [
+      { value: "", label: "No lead agent" },
+      ...gatewayAgents.map((agent) => ({
+        value: agent.id,
+        label: agent.name,
+      })),
+    ],
+    [gatewayAgents],
+  );
   const isLoading =
     gatewaysQuery.isLoading ||
     groupsQuery.isLoading ||
@@ -216,6 +267,30 @@ export default function NewBoardPage() {
               <p className="text-xs text-slate-500">
                 Optional. Groups increase cross-board visibility.
               </p>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-900">
+                  Board lead
+                </label>
+                <SearchableSelect
+                  ariaLabel="Select board lead"
+                  value={leadAgentId}
+                  onValueChange={setLeadAgentId}
+                  options={leadAgentOptions}
+                  placeholder="No lead agent"
+                  searchPlaceholder="Search agents..."
+                  emptyMessage="No agents found on this gateway."
+                  triggerClassName="w-full h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                  contentClassName="rounded-xl border border-slate-200 shadow-lg"
+                  itemClassName="px-4 py-3 text-sm text-slate-700 data-[selected=true]:bg-slate-50 data-[selected=true]:text-slate-900"
+                  disabled={isLoading || !displayGatewayId}
+                />
+                <p className="text-xs text-slate-500">
+                  Optional. Select an agent from the gateway to act as board lead.
+                </p>
+              </div>
             </div>
           </div>
 

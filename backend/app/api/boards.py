@@ -26,7 +26,7 @@ from app.models.agents import Agent
 from app.models.board_groups import BoardGroup
 from app.models.boards import Board
 from app.models.gateways import Gateway
-from app.schemas.boards import BoardCreate, BoardRead, BoardUpdate
+from app.schemas.boards import BoardCreate, BoardLeadAssign, BoardRead, BoardUpdate
 from app.schemas.common import OkResponse
 from app.schemas.pagination import DefaultLimitOffsetPage
 from app.schemas.view_models import BoardGroupSnapshot, BoardSnapshot
@@ -485,6 +485,65 @@ async def update_board(
                 )
     return updated
 
+
+@router.put("/{board_id}/lead", response_model=dict)
+async def assign_board_lead(
+    payload: BoardLeadAssign,
+    board: Board = BOARD_USER_WRITE_DEP,
+    session: AsyncSession = SESSION_DEP,
+    _ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> dict:
+    """Assign an existing agent as board lead, demoting the previous lead if any."""
+    from app.db import crud as db_crud
+
+    agent = await db_crud.get_by_id(session, Agent, payload.agent_id)
+    if agent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent not found.",
+        )
+
+    # Ensure the agent belongs to the same gateway as the board.
+    if agent.gateway_id != board.gateway_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Agent must belong to the same gateway as the board.",
+        )
+
+    # Demote the current lead if one exists.
+    current_lead = (
+        await session.exec(
+            select(Agent)
+            .where(Agent.board_id == board.id)
+            .where(col(Agent.is_board_lead).is_(True)),
+        )
+    ).first()
+    if current_lead and current_lead.id != agent.id:
+        current_lead.is_board_lead = False
+        current_lead.updated_at = utcnow()
+        session.add(current_lead)
+
+    # Promote the new agent.
+    agent.is_board_lead = True
+    agent.board_id = board.id
+    agent.updated_at = utcnow()
+    session.add(agent)
+    await session.commit()
+    await session.refresh(agent)
+
+    logger.info(
+        "board.lead.assigned board_id=%s agent_id=%s agent_name=%s",
+        board.id,
+        agent.id,
+        agent.name,
+    )
+
+    return {
+        "id": str(agent.id),
+        "name": agent.name,
+        "is_board_lead": agent.is_board_lead,
+        "board_id": str(agent.board_id) if agent.board_id else None,
+    }
 
 @router.delete("/{board_id}", response_model=OkResponse)
 async def delete_board(
