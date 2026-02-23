@@ -524,14 +524,22 @@ class OpenClawGatewayControlPlane(GatewayControlPlane):
         # Prefer an idempotent "create then update" flow.
         # - Avoids enumerating gateway agents for existence checks.
         # - Ensures we always hit the "create" RPC first, per lifecycle expectations.
+        backoff = GatewayBackoff(
+            timeout_s=30.0,
+            base_delay_s=2.0,
+            max_delay_s=10.0,
+            timeout_context="agents.create/update (post-restart)",
+        )
         try:
-            await openclaw_call(
-                "agents.create",
-                {
-                    "name": registration.agent_id,
-                    "workspace": registration.workspace_path,
-                },
-                config=self._config,
+            await backoff.run(
+                lambda: openclaw_call(
+                    "agents.create",
+                    {
+                        "name": registration.agent_id,
+                        "workspace": registration.workspace_path,
+                    },
+                    config=self._config,
+                ),
             )
         except OpenClawGatewayError as exc:
             message = str(exc).lower()
@@ -539,14 +547,17 @@ class OpenClawGatewayControlPlane(GatewayControlPlane):
                 marker in message for marker in ("already", "exist", "duplicate", "conflict")
             ):
                 raise
-        await openclaw_call(
-            "agents.update",
-            {
-                "agentId": registration.agent_id,
-                "name": registration.name,
-                "workspace": registration.workspace_path,
-            },
-            config=self._config,
+        backoff.reset()
+        await backoff.run(
+            lambda: openclaw_call(
+                "agents.update",
+                {
+                    "agentId": registration.agent_id,
+                    "name": registration.name,
+                    "workspace": registration.workspace_path,
+                },
+                config=self._config,
+            ),
         )
         await self.patch_agent_heartbeats(
             [(registration.agent_id, registration.workspace_path, registration.heartbeat)],
@@ -560,10 +571,18 @@ class OpenClawGatewayControlPlane(GatewayControlPlane):
         )
 
     async def list_agent_files(self, agent_id: str) -> dict[str, dict[str, Any]]:
-        payload = await openclaw_call(
-            "agents.files.list",
-            {"agentId": agent_id},
-            config=self._config,
+        backoff = GatewayBackoff(
+            timeout_s=30.0,
+            base_delay_s=2.0,
+            max_delay_s=10.0,
+            timeout_context="agents.files.list (post-restart)",
+        )
+        payload = await backoff.run(
+            lambda: openclaw_call(
+                "agents.files.list",
+                {"agentId": agent_id},
+                config=self._config,
+            ),
         )
         if not isinstance(payload, dict):
             return {}
@@ -589,17 +608,33 @@ class OpenClawGatewayControlPlane(GatewayControlPlane):
         )
 
     async def set_agent_file(self, *, agent_id: str, name: str, content: str) -> None:
-        await openclaw_call(
-            "agents.files.set",
-            {"agentId": agent_id, "name": name, "content": content},
-            config=self._config,
+        backoff = GatewayBackoff(
+            timeout_s=30.0,
+            base_delay_s=2.0,
+            max_delay_s=10.0,
+            timeout_context="agents.files.set (post-restart)",
+        )
+        await backoff.run(
+            lambda: openclaw_call(
+                "agents.files.set",
+                {"agentId": agent_id, "name": name, "content": content},
+                config=self._config,
+            ),
         )
 
     async def delete_agent_file(self, *, agent_id: str, name: str) -> None:
-        await openclaw_call(
-            "agents.files.delete",
-            {"agentId": agent_id, "name": name},
-            config=self._config,
+        backoff = GatewayBackoff(
+            timeout_s=30.0,
+            base_delay_s=2.0,
+            max_delay_s=10.0,
+            timeout_context="agents.files.delete (post-restart)",
+        )
+        await backoff.run(
+            lambda: openclaw_call(
+                "agents.files.delete",
+                {"agentId": agent_id, "name": name},
+                config=self._config,
+            ),
         )
 
     async def patch_agent_heartbeats(
