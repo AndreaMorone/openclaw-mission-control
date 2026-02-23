@@ -520,6 +520,46 @@ async def test_control_plane_upsert_agent_handles_already_exists(monkeypatch):
     assert calls[1][0] == "agents.update"
 
 
+@pytest.mark.asyncio
+async def test_config_patch_retries_on_transient_gateway_error(monkeypatch):
+    """config.patch triggers a gateway restart; the retry wrapper should absorb the transient error."""
+    call_count = 0
+
+    async def _fake_openclaw_call(method, params=None, config=None):
+        nonlocal call_count
+        _ = config
+        if method == "agents.create":
+            return {"ok": True}
+        if method == "agents.update":
+            return {"ok": True}
+        if method == "config.get":
+            return {"hash": None, "config": {"agents": {"list": []}}}
+        if method == "config.patch":
+            call_count += 1
+            if call_count == 1:
+                raise agent_provisioning.OpenClawGatewayError(
+                    "received 503 websocket connection closed"
+                )
+            return {"ok": True}
+        raise AssertionError(f"Unexpected method: {method}")
+
+    monkeypatch.setattr(agent_provisioning, "openclaw_call", _fake_openclaw_call)
+    cp = agent_provisioning.OpenClawGatewayControlPlane(
+        agent_provisioning.GatewayClientConfig(url="ws://gateway.example/ws", token=None),
+    )
+    await cp.upsert_agent(
+        agent_provisioning.GatewayAgentRegistration(
+            agent_id="board-agent-retry",
+            name="Board Agent Retry",
+            workspace_path="/tmp/workspace-board-agent-retry",
+            heartbeat={"every": "10m", "target": "last", "includeReasoning": False},
+        ),
+    )
+
+    # config.patch should have been called twice: first attempt failed, retry succeeded.
+    assert call_count == 2
+
+
 def test_is_missing_agent_error_matches_gateway_agent_not_found() -> None:
     assert agent_provisioning._is_missing_agent_error(
         agent_provisioning.OpenClawGatewayError('agent "mc-abc" not found'),

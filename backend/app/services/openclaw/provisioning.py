@@ -43,6 +43,7 @@ from app.services.openclaw.gateway_rpc import (
     openclaw_call,
     send_message,
 )
+from app.services.openclaw.internal.retry import GatewayBackoff
 from app.services.openclaw.internal.agent_key import agent_key as _agent_key
 from app.services.openclaw.internal.agent_key import slugify
 from app.services.openclaw.internal.session_keys import (
@@ -616,7 +617,18 @@ class OpenClawGatewayControlPlane(GatewayControlPlane):
         params = {"raw": json.dumps(patch)}
         if base_hash:
             params["baseHash"] = base_hash
-        await openclaw_call("config.patch", params, config=self._config)
+        # config.patch triggers a gateway SIGUSR1 restart which drops the
+        # WebSocket connection.  Retry with backoff so transient 503 /
+        # "connection closed" errors are absorbed transparently.
+        backoff = GatewayBackoff(
+            timeout_s=30.0,
+            base_delay_s=2.0,
+            max_delay_s=10.0,
+            timeout_context="config.patch (gateway restart)",
+        )
+        await backoff.run(
+            lambda: openclaw_call("config.patch", params, config=self._config),
+        )
 
 
 async def _gateway_config_agent_list(
