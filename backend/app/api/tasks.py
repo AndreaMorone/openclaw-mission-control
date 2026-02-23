@@ -2348,7 +2348,9 @@ async def _finalize_updated_task(
     status_raw = update.updates.get("status")
     # Entering review requires either a new comment or a valid recent one to
     # ensure reviewers get context on readiness.
-    if status_raw == "review":
+    # Admin/user actors (UI) are exempt — they can inspect the board directly.
+    is_agent_actor = update.actor.actor_type == "agent"
+    if status_raw == "review" and is_agent_actor:
         comment_text = (update.comment or "").strip()
         review_comment_author = update.task.assigned_agent_id or update.previous_assigned
         review_comment_since = (
