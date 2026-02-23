@@ -629,6 +629,13 @@ class OpenClawGatewayControlPlane(GatewayControlPlane):
         await backoff.run(
             lambda: openclaw_call("config.patch", params, config=self._config),
         )
+        # The gateway restarts after config.patch.  Wait for it to become
+        # healthy again so that subsequent RPC calls (agents.files.set,
+        # list_agent_files, etc.) do not fail with 502/503.
+        backoff.reset()
+        await backoff.run(
+            lambda: openclaw_call("health", config=self._config),
+        )
 
 
 async def _gateway_config_agent_list(

@@ -523,10 +523,11 @@ async def test_control_plane_upsert_agent_handles_already_exists(monkeypatch):
 @pytest.mark.asyncio
 async def test_config_patch_retries_on_transient_gateway_error(monkeypatch):
     """config.patch triggers a gateway restart; the retry wrapper should absorb the transient error."""
-    call_count = 0
+    patch_calls = 0
+    health_calls = 0
 
     async def _fake_openclaw_call(method, params=None, config=None):
-        nonlocal call_count
+        nonlocal patch_calls, health_calls
         _ = config
         if method == "agents.create":
             return {"ok": True}
@@ -535,10 +536,18 @@ async def test_config_patch_retries_on_transient_gateway_error(monkeypatch):
         if method == "config.get":
             return {"hash": None, "config": {"agents": {"list": []}}}
         if method == "config.patch":
-            call_count += 1
-            if call_count == 1:
+            patch_calls += 1
+            if patch_calls == 1:
                 raise agent_provisioning.OpenClawGatewayError(
                     "received 503 websocket connection closed"
+                )
+            return {"ok": True}
+        if method == "health":
+            health_calls += 1
+            if health_calls == 1:
+                # Gateway is still restarting after config.patch
+                raise agent_provisioning.OpenClawGatewayError(
+                    "server rejected WebSocket connection: HTTP 502"
                 )
             return {"ok": True}
         raise AssertionError(f"Unexpected method: {method}")
@@ -556,8 +565,9 @@ async def test_config_patch_retries_on_transient_gateway_error(monkeypatch):
         ),
     )
 
-    # config.patch should have been called twice: first attempt failed, retry succeeded.
-    assert call_count == 2
+    # config.patch retried once, health check retried once to wait for gateway recovery.
+    assert patch_calls == 2
+    assert health_calls == 2
 
 
 def test_is_missing_agent_error_matches_gateway_agent_not_found() -> None:
