@@ -9,7 +9,7 @@ WORKDIR /app
 
 # System deps (keep minimal)
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl ca-certificates \
+  && apt-get install -y --no-install-recommends curl ca-certificates git \
   && rm -rf /var/lib/apt/lists/*
 
 # Install uv (https://github.com/astral-sh/uv)
